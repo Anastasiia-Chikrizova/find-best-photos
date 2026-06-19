@@ -20,6 +20,9 @@ PUT_EXPIRES = int(os.getenv("R2_PUT_EXPIRES", "3600"))  # срок жизни pr
 
 enabled = bool(ACCOUNT_ID and ACCESS_KEY and SECRET_KEY and BUCKET)
 
+# S3 API эндпоинт R2 собирается из account id — НЕ из R2_BUCKET.
+ENDPOINT = f"https://{ACCOUNT_ID}.r2.cloudflarestorage.com"
+
 _client = None
 if enabled:
     try:
@@ -27,14 +30,35 @@ if enabled:
         from botocore.config import Config
         _client = boto3.client(
             "s3",
-            endpoint_url=f"https://{ACCOUNT_ID}.r2.cloudflarestorage.com",
+            endpoint_url=ENDPOINT,
             aws_access_key_id=ACCESS_KEY,
             aws_secret_access_key=SECRET_KEY,
-            config=Config(signature_version="s3v4", region_name="auto"),
+            # Короткие таймауты и без ретраев — чтобы кривой эндпоинт падал быстро,
+            # а не висел секундами на каждом запросе.
+            config=Config(
+                signature_version="s3v4", region_name="auto",
+                connect_timeout=5, read_timeout=10, retries={"max_attempts": 1},
+            ),
         )
     except Exception:
         enabled = False
         _client = None
+
+
+def check():
+    """Проверяет живость конфига: коннект к R2 + существование бакета.
+
+    Возвращает (ok: bool, detail: str). Удобно дёрнуть через /r2/health, чтобы
+    диагностировать проблемы (неверный account id, нет бакета, нет прав) на
+    сервере, а не ловить мёртвый presigned-URL в браузере.
+    """
+    if not enabled:
+        return False, "R2 не настроен (нет переменных окружения)"
+    try:
+        _client.head_bucket(Bucket=BUCKET)
+        return True, f"OK: {ENDPOINT}, бакет '{BUCKET}' доступен"
+    except Exception as e:
+        return False, f"{ENDPOINT}, бакет '{BUCKET}': {type(e).__name__}: {e}"
 
 
 def _safe_name(name: str) -> str:

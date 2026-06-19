@@ -110,6 +110,13 @@ async def analyze_photos(files: List[UploadFile] = File(...)):
     return JSONResponse(content={"count": len(results), "photos": results})
 
 
+@app.get("/r2/health")
+def r2_health():
+    """Диагностика R2: коннект + доступность бакета. Дёрни в браузере/curl."""
+    ok, detail = r2.check()
+    return JSONResponse(status_code=200 if ok else 503, content={"ok": ok, "detail": detail})
+
+
 @app.post("/r2/sign")
 def r2_sign(payload: dict):
     """Выдаёт presigned-PUT URL-ы, чтобы браузер залил оригиналы прямо в R2.
