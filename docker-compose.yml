@@ -1,0 +1,10 @@
+services:
+  photo-ranker:
+    build: .
+    ports:
+      - "8000:8000"
+    # Ключи подхватываются из .env в РАНТАЙМЕ — в образ не запекаются.
+    # .env должен лежать рядом (см. .env.example) и НЕ коммитится.
+    env_file:
+      - .env
+    restart: unless-stopped

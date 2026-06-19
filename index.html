@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Photo Ranker</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; min-height: 100vh; }
+  header { padding: 20px 24px; border-bottom: 1px solid #222; }
+  header h1 { font-size: 1.3rem; font-weight: 600; letter-spacing: -0.02em; }
+  header p { font-size: 0.82rem; color: #666; margin-top: 4px; }
+  .drop-zone {
+    display: block; margin: 24px auto; max-width: 640px;
+    border: 2px dashed #333; border-radius: 12px;
+    padding: 36px 24px; text-align: center; cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .drop-zone.drag-over { border-color: #555; background: #1a1a1a; }
+  .drop-zone svg { opacity: 0.3; margin-bottom: 12px; }
+  .drop-zone p { color: #555; font-size: 0.9rem; }
+  .drop-zone span { color: #888; font-size: 0.8rem; margin-top: 8px; display: block; }
+  #file-input { display: none; }
+
+  .toolbar { max-width: 940px; margin: 0 auto; display: flex; align-items: center;
+    gap: 12px; padding: 0 16px; min-height: 36px; }
+  #status { flex: 1; color: #666; font-size: 0.85rem; }
+  #status.error { color: #e05555; }
+  #csv-btn {
+    display: none; background: #1f1f1f; color: #ccc; border: 1px solid #333;
+    border-radius: 8px; padding: 7px 14px; font-size: 0.8rem; cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  #csv-btn:hover { background: #2a2a2a; border-color: #555; }
+
+  .progress-wrap { max-width: 940px; margin: 10px auto 0; padding: 0 16px;
+    display: none; flex-direction: column; gap: 10px; }
+  .progress-wrap.active { display: flex; }
+  .progress-row { display: flex; flex-direction: column; gap: 5px; }
+  .progress-head { display: flex; justify-content: space-between;
+    font-size: 0.74rem; color: #888; }
+  .progress-head span:last-child { color: #aaa; font-variant-numeric: tabular-nums; }
+  .progress-track { height: 5px; background: #1f1f1f; border-radius: 3px; overflow: hidden; }
+  .progress-bar { height: 100%; width: 0; border-radius: 3px; transition: width 0.2s ease; }
+  .progress-bar.upload { background: linear-gradient(90deg, #4a9eff, #56c8ff); }
+  .progress-bar.analyze { background: linear-gradient(90deg, #a78bfa, #f0a6ff); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px; padding: 16px; max-width: 940px; margin: 0 auto; }
+  @media (max-width: 480px) {
+    header { padding: 14px 16px; }
+    header h1 { font-size: 1.1rem; }
+    .drop-zone { margin: 16px 16px; padding: 28px 16px; }
+    .drop-zone svg { width: 36px; height: 36px; }
+    .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 12px; }
+    .card-body { padding: 8px; }
+  }
+  .card {
+    background: #1a1a1a; border-radius: 10px; overflow: hidden;
+    border: 1px solid #2a2a2a; transition: transform 0.15s; cursor: pointer;
+  }
+  .card:hover { transform: translateY(-2px); }
+  .card img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+  .card-body { padding: 12px; }
+  .rank { font-size: 0.7rem; color: #555; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+  .rank b { color: #aaa; font-size: 1rem; }
+  .filename { font-size: 0.78rem; color: #777; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 10px; }
+  .score-row { display: flex; justify-content: space-between; font-size: 0.72rem; color: #555; margin-top: 4px; }
+  .score-row span:last-child { color: #888; }
+  .bar-wrap { height: 3px; background: #2a2a2a; border-radius: 2px; margin-top: 10px; }
+  .bar { height: 100%; border-radius: 2px; background: linear-gradient(90deg, #4a9eff, #a78bfa); }
+  .medal-1 { border-color: #b8860b; }
+  .medal-2 { border-color: #606060; }
+  .medal-3 { border-color: #7a4a2a; }
+
+  /* Lightbox — полноразмерный просмотр */
+  #lightbox {
+    display: none; position: fixed; inset: 0; z-index: 50;
+    background: rgba(0,0,0,0.92); align-items: center; justify-content: center;
+    padding: 24px; cursor: zoom-out;
+  }
+  #lightbox.open { display: flex; }
+  #lightbox img { max-width: 100%; max-height: 88vh; border-radius: 8px; object-fit: contain; }
+  #lightbox-caption { position: absolute; bottom: 18px; left: 0; right: 0; text-align: center;
+    color: #aaa; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Photo Ranker</h1>
+  <p>Сортирует фото по резкости, экспозиции, лицам, композиции, шуму и смазу</p>
+</header>
+
+<label class="drop-zone" id="drop-zone" for="file-input">
+  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+  </svg>
+  <p>Перетащи фото сюда или нажми для выбора</p>
+  <span>Можно сразу много — JPG, PNG, HEIC/HEIF, RAW (DNG)</span>
+</label>
+<input type="file" id="file-input" multiple accept="image/*,.heic,.heif,.dng,.raw,.arw,.cr2,.cr3,.nef" style="display:none">
+
+<div class="toolbar">
+  <div id="status"></div>
+  <button id="csv-btn" type="button">Скачать CSV</button>
+</div>
+<div class="progress-wrap" id="progress-wrap">
+  <div class="progress-row">
+    <div class="progress-head"><span>Загрузка файлов</span><span id="upload-label">0%</span></div>
+    <div class="progress-track"><div class="progress-bar upload" id="upload-bar"></div></div>
+  </div>
+  <div class="progress-row">
+    <div class="progress-head"><span>Анализ</span><span id="analyze-label">0 / 0</span></div>
+    <div class="progress-track"><div class="progress-bar analyze" id="analyze-bar"></div></div>
+  </div>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<div id="lightbox"><img id="lightbox-img" alt=""><div id="lightbox-caption"></div></div>
+
+<script>
+const CONFIG = __CONFIG__;
+const drop = document.getElementById('drop-zone');
+const input = document.getElementById('file-input');
+const status = document.getElementById('status');
+const grid = document.getElementById('grid');
+const csvBtn = document.getElementById('csv-btn');
+const progressWrap = document.getElementById('progress-wrap');
+const uploadBar = document.getElementById('upload-bar');
+const uploadLabel = document.getElementById('upload-label');
+const analyzeBar = document.getElementById('analyze-bar');
+const analyzeLabel = document.getElementById('analyze-label');
+const lightbox = document.getElementById('lightbox');
+const lightboxImg = document.getElementById('lightbox-img');
+const lightboxCap = document.getElementById('lightbox-caption');
+
+let lastResults = [];   // для экспорта в CSV
+let fileByName = {};     // уникальное имя -> File (для ленивых превью и лайтбокса)
+let thumbUrls = [];      // blob-URL сгенерированных превью — чистим при новой загрузке
+let lightboxUrl = null;  // objectURL открытого в лайтбоксе фото (одно за раз)
+
+const THUMB_MAX = 320;   // сторона превью; держим маленьким — iOS бережёт память
+
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag-over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('drag-over'));
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag-over'); handle(e.dataTransfer.files); });
+input.addEventListener('change', () => { handle(input.files); input.value = ''; });
+csvBtn.addEventListener('click', downloadCsv);
+lightbox.addEventListener('click', closeLightbox);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
+// На тач-экранах нет перетаскивания файлов — правим подсказку, чтобы не путать.
+if (window.matchMedia('(pointer: coarse)').matches) {
+  drop.querySelector('p').textContent = 'Нажми, чтобы выбрать фото';
+}
+
+// Ленивая генерация превью: уменьшаем фото только когда карточка въезжает в
+// видимую область. Сотни полноразмерных <img> в DOM роняют вкладку на iOS,
+// а так в памяти живёт лишь горстка маленьких превью вокруг экрана.
+const thumbObserver = new IntersectionObserver((entries, obs) => {
+  entries.forEach(entry => {
+    if (!entry.isIntersecting) return;
+    const card = entry.target;
+    obs.unobserve(card);
+    makeThumb(card.dataset.name).then(url => {
+      if (url) card.querySelector('img').src = url;
+    });
+  });
+}, { rootMargin: '300px' });
+
+// Уменьшает файл до THUMB_MAX по длинной стороне через canvas. createImageBitmap
+// с imageOrientation:'from-image' учитывает EXIF (портретные кадры iPhone).
+async function makeThumb(name) {
+  const file = fileByName[name];
+  if (!file) return null;
+  try {
+    let bmp;
+    try {
+      bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    } catch (_) {
+      bmp = await loadViaImg(file);  // запасной путь, если createImageBitmap не взял формат
+    }
+    const scale = Math.min(1, THUMB_MAX / Math.max(bmp.width, bmp.height));
+    const w = Math.max(1, Math.round(bmp.width * scale));
+    const h = Math.max(1, Math.round(bmp.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(bmp, 0, 0, w, h);
+    if (bmp.close) bmp.close();
+    const url = await new Promise(res =>
+      canvas.toBlob(b => res(b ? URL.createObjectURL(b) : null), 'image/jpeg', 0.8));
+    if (url) thumbUrls.push(url);
+    return url;
+  } catch (_) {
+    return null;  // HEIC/RAW, которые браузер не декодирует — останется плейсхолдер
+  }
+}
+
+function loadViaImg(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { resolve(img); URL.revokeObjectURL(url); };
+    img.onerror = () => { reject(new Error('decode')); URL.revokeObjectURL(url); };
+    img.src = url;
+  });
+}
+
+function showProgress() {
+  progressWrap.classList.add('active');
+  uploadBar.style.width = '0'; analyzeBar.style.width = '0';
+  uploadLabel.textContent = '0%'; analyzeLabel.textContent = '0 / 0';
+}
+function setUpload(loaded, total) {
+  const pct = total ? Math.round(loaded / total * 100) : 0;
+  uploadBar.style.width = pct + '%';
+  uploadLabel.textContent = `${pct}% · ${fmtMb(loaded)} / ${fmtMb(total)} МБ`;
+}
+function setAnalyze(done, total) {
+  analyzeBar.style.width = (total ? Math.round(done / total * 100) : 0) + '%';
+  analyzeLabel.textContent = `${done} / ${total}`;
+}
+function hideProgress() {
+  setTimeout(() => progressWrap.classList.remove('active'), 600);
+}
+function fmtMb(bytes) { return (bytes / 1048576).toFixed(1); }
+
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+// Делает имя уникальным в рамках набора: "img.jpg" -> "img (2).jpg".
+function uniqueName(name, used) {
+  if (!used.has(name)) { used.add(name); return name; }
+  const dot = name.lastIndexOf('.');
+  const base = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : '';
+  let k = 2, candidate;
+  do { candidate = `${base} (${k++})${ext}`; } while (used.has(candidate));
+  used.add(candidate);
+  return candidate;
+}
+
+// Загрузка одного батча через XHR — fetch не отдаёт прогресс отправки байтов,
+// а нам нужна реальная полоса загрузки. onUp(loaded) зовётся по мере отправки.
+function uploadBatch(batch, onUp) {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData();
+    batch.files.forEach(e => fd.append('files', e.file, e.name));
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/analyze');
+    xhr.upload.addEventListener('progress', e => {
+      if (e.lengthComputable) onUp(Math.min(e.loaded, batch.bytes));
+    });
+    xhr.addEventListener('load', () => {
+      onUp(batch.bytes);  // отправка точно завершена — добиваем до 100%
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try { resolve(JSON.parse(xhr.responseText)); }
+        catch (_) { reject(new Error('некорректный ответ сервера')); }
+      } else {
+        reject(new Error('HTTP ' + xhr.status));
+      }
+    });
+    xhr.addEventListener('error', () => reject(new Error('сбой сети')));
+    xhr.addEventListener('abort', () => reject(new Error('прервано')));
+    xhr.send(fd);
+  });
+}
+
+// --- Путь через Cloudflare R2 ------------------------------------------------
+// Батч: 1) просим у бекенда presigned-URL, 2) PUT-им оригиналы прямо в R2
+// (байты идут в полосу загрузки), 3) просим бекенд проанализировать их по ключам.
+// Сигнатура (batch, onUp) -> {photos} та же, что у uploadBatch, поэтому воркер
+// в handle() её просто подставляет вместо обычной загрузки.
+async function processBatchR2(batch, onUp) {
+  const signRes = await fetch('/r2/sign', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: batch.files.map(e => ({ name: e.name, size: e.file.size })) }),
+  });
+  if (!signRes.ok) throw new Error('подпись R2: HTTP ' + signRes.status);
+  const { uploads } = await signRes.json();   // [{name,key,url}] в порядке batch.files
+
+  const loaded = new Array(batch.files.length).fill(0);
+  await Promise.all(batch.files.map((e, i) => putToR2(e.file, uploads[i].url, n => {
+    loaded[i] = n;
+    onUp(loaded.reduce((s, x) => s + x, 0));
+  })));
+  onUp(batch.bytes);
+
+  const anRes = await fetch('/r2/analyze', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items: uploads.map(u => ({ key: u.key, name: u.name })) }),
+  });
+  if (!anRes.ok) throw new Error('анализ R2: HTTP ' + anRes.status);
+  return await anRes.json();
+}
+
+// PUT одного файла в R2 по presigned-URL с прогрессом отправки.
+function putToR2(file, url, onUp) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', url);
+    xhr.upload.addEventListener('progress', e => {
+      if (e.lengthComputable) onUp(Math.min(e.loaded, file.size));
+    });
+    xhr.addEventListener('load', () => {
+      onUp(file.size);
+      (xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(new Error('R2 PUT: HTTP ' + xhr.status));
+    });
+    xhr.addEventListener('error', () => reject(new Error('сбой сети R2')));
+    xhr.addEventListener('abort', () => reject(new Error('прервано')));
+    xhr.send(file);
+  });
+}
+
+async function handle(fileList) {
+  const files = Array.from(fileList);
+  if (!files.length) return;
+
+  // чистим прошлый прогон: превью-блобы, ссылки на файлы, наблюдатель
+  thumbObserver.disconnect();
+  thumbUrls.forEach(URL.revokeObjectURL);
+  thumbUrls = [];
+  fileByName = {};
+  closeLightbox();
+
+  status.className = '';
+  csvBtn.style.display = 'none';
+  grid.innerHTML = '';
+  lastResults = [];
+
+  const tooBig = files.filter(f => f.size > CONFIG.maxFileMb * 1024 * 1024);
+  const okFiles = files.filter(f => f.size <= CONFIG.maxFileMb * 1024 * 1024);
+  if (!okFiles.length) { status.className = 'error'; status.textContent = 'Все файлы слишком большие'; return; }
+
+  // iOS при мульти-выборе из «Фото» нередко отдаёт несколько файлов с одним
+  // именем (image.jpg). Делаем имена уникальными — иначе превью и результаты
+  // затирают друг друга. На сервер уходит уже уникальное имя.
+  const used = new Set();
+  const valid = okFiles.map((file, i) => {
+    const name = uniqueName(file.name || `IMG_${i}.jpg`, used);
+    fileByName[name] = file;
+    return { file, name };
+  });
+
+  // Батчи держим объектами: bytes — размер батча, loaded — сколько уже отправлено.
+  const batches = chunk(valid, CONFIG.maxFilesPerRequest).map(items => ({
+    files: items, loaded: 0, bytes: items.reduce((s, e) => s + e.file.size, 0),
+  }));
+  const totalBytes = batches.reduce((s, b) => s + b.bytes, 0);
+  const collected = [];
+  let done = 0, failed = 0;
+
+  showProgress();
+  setAnalyze(0, valid.length);
+  status.textContent = `Загрузка ${valid.length} фото...`;
+
+  // Полоса загрузки = сумма отправленных байтов по всем батчам (в т.ч. в полёте).
+  function refreshUpload() {
+    const loaded = batches.reduce((s, b) => s + b.loaded, 0);
+    setUpload(loaded, totalBytes);
+  }
+
+  // R2 настроен — грузим оригиналы прямо в облако; иначе multipart на бекенд.
+  const processBatch = CONFIG.r2Enabled ? processBatchR2 : uploadBatch;
+
+  // Пул из N параллельных воркеров разбирает очередь батчей. Несколько запросов
+  // в полёте прячут сетевую задержку и не дают серверному пулу простаивать.
+  let next = 0;
+  async function worker() {
+    while (next < batches.length) {
+      const batch = batches[next++];
+      try {
+        const data = await processBatch(batch, loaded => {
+          batch.loaded = loaded;
+          refreshUpload();
+        });
+        collected.push(...data.photos);
+      } catch (e) {
+        failed += batch.files.length;  // упавший батч не валит всю загрузку
+        batch.loaded = batch.bytes;    // но в полосе загрузки его всё равно засчитываем
+        refreshUpload();
+      }
+      done += batch.files.length;
+      setAnalyze(done, valid.length);
+      status.textContent = done < valid.length
+        ? `Анализ ${done} из ${valid.length}...` : 'Сортирую...';
+    }
+  }
+
+  try {
+    const pool = Math.min(CONFIG.uploadConcurrency || 4, batches.length);
+    await Promise.all(Array.from({ length: pool }, worker));
+
+    const ranked = rank(collected);
+    lastResults = ranked;
+    render(ranked);
+    let msg = `Готово: ${ranked.length} фото отсортировано`;
+    if (failed) msg += ` · ${failed} не удалось обработать`;
+    if (tooBig.length) msg += ` · ${tooBig.length} пропущено (больше ${CONFIG.maxFileMb} МБ)`;
+    status.textContent = msg;
+    if (ranked.length) csvBtn.style.display = 'inline-block';
+  } catch (err) {
+    status.className = 'error';
+    status.textContent = 'Ошибка: ' + err.message;
+  } finally {
+    hideProgress();
+  }
+}
+
+// Финальная калибровка резкости по всему набору и сборка итогового score.
+// Дублирует логику scoring.normalize_sharpness, чтобы корректно ранжировать
+// набор, разбитый на несколько батчей.
+function rank(photos) {
+  if (!photos.length) return [];
+  const raws = photos.map(p => p.sharpness_raw).sort((a, b) => a - b);
+  let ref;
+  if (raws.length >= 5) {
+    const idx = Math.min(raws.length - 1, Math.floor(0.9 * (raws.length - 1)));
+    ref = Math.max(raws[idx], CONFIG.sharpnessRef * 0.2);
+  } else {
+    ref = CONFIG.sharpnessRef;
+  }
+  ref = Math.max(ref, 1);
+
+  photos.forEach(p => {
+    const sharpNorm = Math.min(p.sharpness_raw / ref, 1);
+    p.sharpness = +sharpNorm.toFixed(4);
+    p.score = +(CONFIG.sharpnessWeight * sharpNorm + p.partial).toFixed(4);
+  });
+  photos.sort((a, b) => b.score - a.score);
+  photos.forEach((p, i) => { p.rank = i + 1; });
+  return photos;
+}
+
+function render(photos) {
+  const frag = document.createDocumentFragment();
+  const medals = { 1: 'medal-1', 2: 'medal-2', 3: 'medal-3' };
+  photos.forEach(p => {
+    const pct = Math.round(p.score * 100);
+    const card = document.createElement('div');
+    card.className = 'card ' + (medals[p.rank] || '');
+    card.dataset.name = p.filename;
+    card.innerHTML = `
+      <img src="${placeholder(p.filename)}" alt="${p.filename}" decoding="async">
+      <div class="card-body">
+        <div class="rank">#<b>${p.rank}</b></div>
+        <div class="filename">${p.filename}</div>
+        <div class="bar-wrap"><div class="bar" style="width:${pct}%"></div></div>
+        <div class="score-row"><span>Итог</span><span>${pct}%</span></div>
+        <div class="score-row"><span>Резкость</span><span>${Math.round(p.sharpness*100)}%</span></div>
+        <div class="score-row"><span>Экспозиция</span><span>${Math.round(p.exposure*100)}%</span></div>
+        <div class="score-row"><span>Лица</span><span>${Math.round(p.faces*100)}%</span></div>
+        <div class="score-row"><span>Композиция</span><span>${Math.round(p.composition*100)}%</span></div>
+        <div class="score-row"><span>Шум</span><span>${Math.round((1-p.noise)*100)}%</span></div>
+        <div class="score-row"><span>Без смаза</span><span>${Math.round((1-p.motion)*100)}%</span></div>
+      </div>`;
+    card.addEventListener('click', () => openLightbox(p));
+    frag.appendChild(card);
+    // превью догрузится лениво, когда карточка приблизится к экрану
+    thumbObserver.observe(card);
+  });
+  grid.appendChild(frag);
+}
+
+function placeholder(filename) {
+  const ext = (filename.split('.').pop() || 'IMG').toUpperCase().slice(0, 5);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160">
+    <rect width="160" height="160" fill="#222"/>
+    <text x="80" y="78" fill="#666" font-family="system-ui" font-size="13" text-anchor="middle">нет превью</text>
+    <text x="80" y="98" fill="#888" font-family="system-ui" font-size="15" font-weight="600" text-anchor="middle">${ext}</text>
+  </svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+
+// Полноразмер открываем по требованию из самого файла и держим в памяти ровно
+// одно фото — на iOS это безопаснее, чем хранить полноразмерные превью пачкой.
+let lightboxToken = 0;
+async function openLightbox(p) {
+  const file = fileByName[p.filename];
+  if (!file) return;
+  closeLightbox();
+  const token = ++lightboxToken;  // защита от гонки при быстром переключении
+  lightboxCap.textContent = `#${p.rank} · ${p.filename} · ${Math.round(p.score*100)}%`;
+  lightbox.classList.add('open');
+  let src;
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const canvas = document.createElement('canvas');
+    canvas.width = bmp.width; canvas.height = bmp.height;
+    canvas.getContext('2d').drawImage(bmp, 0, 0);
+    if (bmp.close) bmp.close();
+    src = await new Promise(res => canvas.toBlob(b => res(URL.createObjectURL(b)), 'image/jpeg', 0.92));
+  } catch (_) {
+    src = URL.createObjectURL(file);  // вдруг браузер сам отрисует (например, HEIC в Safari)
+  }
+  if (token !== lightboxToken) { URL.revokeObjectURL(src); return; }  // успели открыть другое
+  lightboxUrl = src;
+  lightboxImg.src = src;
+}
+
+function closeLightbox() {
+  lightbox.classList.remove('open');
+  lightboxImg.removeAttribute('src');
+  if (lightboxUrl) { URL.revokeObjectURL(lightboxUrl); lightboxUrl = null; }
+}
+
+function downloadCsv() {
+  if (!lastResults.length) return;
+  const cols = ['rank', 'filename', 'score', 'sharpness', 'exposure', 'faces', 'composition', 'noise', 'motion'];
+  const head = cols.join(',');
+  const rows = lastResults.map(p => cols.map(c => {
+    const v = p[c];
+    if (c === 'filename') return '"' + String(v).replace(/"/g, '""') + '"';
+    return v;
+  }).join(','));
+  const csv = '﻿' + [head, ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'photo-ranking.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+</script>
+</body>
+</html>
