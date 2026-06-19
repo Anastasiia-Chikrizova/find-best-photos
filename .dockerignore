@@ -1,0 +1,18 @@
+# Секреты — НИКОГДА не должны попасть в build-контекст и слои образа
+.env
+.env.*
+!.env.example
+.envrc
+
+# Локальное окружение и мусор
+.venv/
+__pycache__/
+*.pyc
+.git/
+.idea/
+*.log
+
+# Документация/служебное — в рантайме не нужно
+README.md
+.dockerignore
+.gitignore
