@@ -20,7 +20,7 @@ HTML = """<!DOCTYPE html>
   header h1 { font-size: 1.3rem; font-weight: 600; letter-spacing: -0.02em; }
   header p { font-size: 0.82rem; color: #666; margin-top: 4px; }
   .drop-zone {
-    margin: 24px auto; max-width: 640px;
+    display: block; margin: 24px auto; max-width: 640px;
     border: 2px dashed #333; border-radius: 12px;
     padding: 36px 24px; text-align: center; cursor: pointer;
     transition: border-color 0.2s, background 0.2s;
@@ -66,14 +66,14 @@ HTML = """<!DOCTYPE html>
   <p>Сортирует фото по резкости, экспозиции, лицам и композиции</p>
 </header>
 
-<div class="drop-zone" id="drop-zone">
+<label class="drop-zone" id="drop-zone" for="file-input">
   <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
     <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
   </svg>
   <p>Перетащи фото сюда или нажми для выбора</p>
   <span>Можно сразу много — JPG, PNG, HEIC</span>
-  <input type="file" id="file-input" multiple accept="image/*">
-</div>
+</label>
+<input type="file" id="file-input" multiple accept="image/*" style="display:none">
 
 <div id="status"></div>
 <div class="grid" id="grid"></div>
@@ -84,7 +84,6 @@ const input = document.getElementById('file-input');
 const status = document.getElementById('status');
 const grid = document.getElementById('grid');
 
-drop.addEventListener('click', () => input.click());
 drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag-over'); });
 drop.addEventListener('dragleave', () => drop.classList.remove('drag-over'));
 drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag-over'); handle(e.dataTransfer.files); });
