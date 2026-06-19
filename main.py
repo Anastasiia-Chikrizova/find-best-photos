@@ -8,6 +8,7 @@ import os
 import json
 import base64
 import asyncio
+import logging
 from pathlib import Path
 from typing import List
 from concurrent.futures import ThreadPoolExecutor
@@ -19,6 +20,7 @@ import scoring
 import r2
 
 app = FastAPI(title="Photo Ranker")
+log = logging.getLogger("photo-ranker")
 
 # --- Лимиты (через окружение) -------------------------------------------------
 MAX_FILE_MB = float(os.getenv("MAX_FILE_MB", "80"))          # макс. размер одного файла (ProRAW DNG бывает 25–75 МБ)
@@ -126,7 +128,12 @@ def r2_sign(payload: dict):
         name = f.get("name", "file")
         if int(f.get("size", 0)) > MAX_FILE_BYTES:
             raise HTTPException(status_code=413, detail=f"Файл {name} больше {MAX_FILE_MB:.0f} МБ")
-        key, url = r2.presign_put(name)
+        try:
+            key, url = r2.presign_put(name)
+        except Exception as e:
+            # Чаще всего — кривой конфиг R2 (например, R2_BUCKET = URL, а не имя бакета).
+            log.exception("presign_put failed")
+            raise HTTPException(status_code=500, detail=f"Ошибка подписи R2: {e}")
         uploads.append({"name": name, "key": key, "url": url})
     return JSONResponse(content={"uploads": uploads})
 
