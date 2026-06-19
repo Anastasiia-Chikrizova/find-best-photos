@@ -163,8 +163,15 @@ const thumbObserver = new IntersectionObserver((entries, obs) => {
     if (!entry.isIntersecting) return;
     const card = entry.target;
     obs.unobserve(card);
+    const img = card.querySelector('img');
+    // Сначала пробуем уменьшить в браузере (Safari умеет HEIC — сервер не дёргаем).
     makeThumb(card.dataset.name).then(url => {
-      if (url) card.querySelector('img').src = url;
+      if (url) { img.src = url; return; }
+      // Браузер не декодировал (Chrome+HEIC, RAW) — берём превью с сервера из R2.
+      if (card.dataset.key) {
+        img.onerror = () => { img.onerror = null; img.src = placeholder(card.dataset.name); };
+        img.src = '/r2/thumb?key=' + encodeURIComponent(card.dataset.key);
+      }
     });
   });
 }, { rootMargin: '300px' });
@@ -444,6 +451,7 @@ function render(photos) {
     const card = document.createElement('div');
     card.className = 'card ' + (medals[p.rank] || '');
     card.dataset.name = p.filename;
+    if (p.key) card.dataset.key = p.key;  // ключ R2 — для серверного превью
     card.innerHTML = `
       <img src="${placeholder(p.filename)}" alt="${p.filename}" decoding="async">
       <div class="card-body">
@@ -486,7 +494,7 @@ async function openLightbox(p) {
   const token = ++lightboxToken;  // защита от гонки при быстром переключении
   lightboxCap.textContent = `#${p.rank} · ${p.filename} · ${Math.round(p.score*100)}%`;
   lightbox.classList.add('open');
-  let src;
+  let src, isBlob = true;
   try {
     const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
     const canvas = document.createElement('canvas');
@@ -495,10 +503,12 @@ async function openLightbox(p) {
     if (bmp.close) bmp.close();
     src = await new Promise(res => canvas.toBlob(b => res(URL.createObjectURL(b)), 'image/jpeg', 0.92));
   } catch (_) {
-    src = URL.createObjectURL(file);  // вдруг браузер сам отрисует (например, HEIC в Safari)
+    // Браузер не декодировал (Chrome+HEIC/RAW) — берём с сервера превью побольше.
+    if (p.key) { src = '/r2/thumb?key=' + encodeURIComponent(p.key) + '&size=1600'; isBlob = false; }
+    else { src = URL.createObjectURL(file); }  // вдруг отрисует сам (HEIC в Safari)
   }
-  if (token !== lightboxToken) { URL.revokeObjectURL(src); return; }  // успели открыть другое
-  lightboxUrl = src;
+  if (token !== lightboxToken) { if (isBlob) URL.revokeObjectURL(src); return; }  // успели открыть другое
+  lightboxUrl = isBlob ? src : null;  // ревокать нужно только blob-URL
   lightboxImg.src = src;
 }
 

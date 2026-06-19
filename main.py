@@ -14,7 +14,7 @@ from typing import List
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import JSONResponse, HTMLResponse, Response
 
 import scoring
 import r2
@@ -153,7 +153,8 @@ def _fetch_and_score(key: str, name: str):
     metrics = scoring.analyze_image(data, name)
     if metrics is None:
         return None
-    return {"filename": name or key, **metrics}
+    # key возвращаем клиенту — по нему он потом просит серверное превью /r2/thumb
+    return {"filename": name or key, "key": key, **metrics}
 
 
 @app.post("/r2/analyze")
@@ -176,6 +177,28 @@ async def r2_analyze(payload: dict):
     ]
     results = [r for r in await asyncio.gather(*tasks) if r is not None]
     return JSONResponse(content={"count": len(results), "photos": results})
+
+
+def _thumb_from_r2(key: str, max_dim: int):
+    """Скачивает объект из R2 и делает JPEG-превью. В пуле потоков."""
+    data = r2.get_bytes(key, max_bytes=MAX_FILE_BYTES)
+    if data is None:
+        return None
+    return scoring.thumbnail_jpeg(data, key, max_dim=max_dim)
+
+
+@app.get("/r2/thumb")
+async def r2_thumb(key: str, size: int = 400):
+    """Серверное JPEG-превью объекта из R2 — для браузеров, что не рисуют HEIC/RAW."""
+    if not r2.enabled:
+        raise HTTPException(status_code=503, detail="R2 не настроен")
+    max_dim = min(2000, max(64, size))
+    loop = asyncio.get_running_loop()
+    jpeg = await loop.run_in_executor(_EXECUTOR, _thumb_from_r2, key, max_dim)
+    if jpeg is None:
+        raise HTTPException(status_code=404, detail="превью недоступно")
+    return Response(content=jpeg, media_type="image/jpeg",
+                    headers={"Cache-Control": "private, max-age=3600"})
 
 
 @app.post("/rank")

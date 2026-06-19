@@ -246,6 +246,25 @@ def analyze_image(data: bytes, filename: str = ""):
     }
 
 
+def thumbnail_jpeg(data: bytes, filename: str = "", max_dim: int = 400):
+    """Декодирует (HEIC/RAW/любой формат) и отдаёт уменьшенный JPEG для превью.
+
+    Нужен браузерам, которые сами не рисуют HEIC/RAW (десктопный Chrome и т.п.).
+    Возвращает bytes или None, если формат не распознан.
+    """
+    img = decode_image(data, filename)
+    if img is None:
+        return None
+    h, w = img.shape[:2]
+    longest = max(h, w)
+    if longest > max_dim:
+        scale = max_dim / longest
+        img = cv2.resize(img, (max(1, round(w * scale)), max(1, round(h * scale))),
+                         interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    return buf.tobytes() if ok else None
+
+
 def normalize_sharpness(results: list) -> None:
     """Калибрует резкость относительно батча и проставляет итоговый score + rank.
 

@@ -55,15 +55,16 @@ R2 → бакет → Settings → CORS Policy:
 ```json
 [
   {
-    "AllowedOrigins": ["https://ваш-домен"],
+    "AllowedOrigins": ["https://find-best-photos.onrender.com"],
     "AllowedMethods": ["PUT"],
     "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag"],
     "MaxAgeSeconds": 3600
   }
 ]
 ```
 
-(для локальной разработки добавьте `http://localhost:8000`)
+(для локальной разработки добавьте `http://localhost:8000` в `AllowedOrigins`)
 
 ### Хранение
 
